@@ -8,6 +8,9 @@ from PyQt5.QtCore import *
 from dataMarker import *
 from pathlib import Path
 
+LABELING = 1  # 标注状态
+PREVIEW = 0  # 预览状态
+
 
 class MyMainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self, parent=None):
@@ -15,7 +18,6 @@ class MyMainWindow(QMainWindow, Ui_MainWindow):
         self.setupUi(self)
         self.setFont(QFont('SansSerif', 15))
 
-        QToolTip.setFont(QFont('SansSerif', 10))
         print(f'opencv 版本为：{cv.__version__}')
         
         # centerFrame
@@ -27,6 +29,8 @@ class MyMainWindow(QMainWindow, Ui_MainWindow):
         self.selectLabelsFolder.clicked.connect(self.getLabelsFold)
         self.imagesFolderName.editingFinished.connect(self.loadImages)  # 失去焦点或回车
         self.labelsFolderName.editingFinished.connect(self.labelSelected)
+        self.model = PREVIEW
+
         # rightFrame
         self.rightFrame.setFont(QFont('SansSerif', 12))
         self.imageLists.itemClicked.connect(self.clickItem)
@@ -62,20 +66,23 @@ class MyMainWindow(QMainWindow, Ui_MainWindow):
 
     def loadImages(self):
         try:
-            self.imageLists.clear()
-            self.imagesPaths.clear()
-            print(f'数据文件夹: {self.imagesFolderName.text()}')
-            print("检测到图片: ")
-            for suffix in self.suffixs:
-                for path in self.imagesFold.glob(f'*.{suffix}'):
-                    self.imagesPaths.append(path)
+            if self.imagesFolderName.text() != '':
+                self.imageLists.clear()
+                self.imagesPaths.clear()
+                print(f'数据文件夹: {self.imagesFolderName.text()}')
+                print("检测到图片: ")
+                for suffix in self.suffixs:
+                    for path in self.imagesFold.glob(f'*.{suffix}'):
+                        self.imagesPaths.append(path)
 
-            self.imagesPaths.sort()
-            for path in self.imagesPaths:
-                self.imageLists.addItem(str(path))
-                print(path)
+                self.imagesPaths.sort()
+                for path in self.imagesPaths:
+                    self.imageLists.addItem(str(path))
+                    print(path)
 
-            print("图片END")
+                print("图片END")
+            else:
+                print("数据文件夹为空")
         except OSError:
             print(f'OSError, 文件夹不存在')
 
@@ -88,41 +95,45 @@ class MyMainWindow(QMainWindow, Ui_MainWindow):
         :param item:
         :return:
         """
-        path = item.text()
-        print(f'selected image_path = {path}')
+        try:
+            path = item.text()
+            print(f'selected image_path = {path}')
 
-        # self.image = QImage(path)
-        self.image = cv.imread(path, 1)
+            # self.image = QImage(path)
+            self.image = cv.imread(path, 1)
+            if self.image is None:
+                print(f'图片读取失败，路径为:{path}')
+            width, height = self.imageFrame.width(), self.imageFrame.height()
+            imgWidth, imgHeight = self.image.shape[1], self.image.shape[0]
+            # print(self.image.shape)
+            scale = min(width * 0.8 / imgWidth, height * 0.8 / imgHeight)
+            imgWidth, imgHeight = round(imgWidth * scale), round(imgHeight * scale)
 
-        width, height = self.imageFrame.width(), self.imageFrame.height()
-        imgWidth, imgHeight = self.image.shape[1], self.image.shape[0]
-        # print(self.image.shape)
-        scale = min(width * 0.8 / imgWidth, height * 0.8 / imgHeight)
-        imgWidth, imgHeight = round(imgWidth * scale), round(imgHeight * scale)
+            # if imgWidth > imgHeight:
+            #     scale = width*0.8 / imgWidth
+            #     imgWidth, imgHeight = round(imgWidth*scale), round(imgHeight*scale)
+            #
+            # else:
+            #     scale = height * 0.8 / imgHeight
+            #     imgWidth, imgHeight = round(imgWidth * scale), round(imgHeight * scale)
 
-        # if imgWidth > imgHeight:
-        #     scale = width*0.8 / imgWidth
-        #     imgWidth, imgHeight = round(imgWidth*scale), round(imgHeight*scale)
-        #
-        # else:
-        #     scale = height * 0.8 / imgHeight
-        #     imgWidth, imgHeight = round(imgWidth * scale), round(imgHeight * scale)
+            self.image = cv.resize(self.image, (imgWidth, imgHeight))  # (w, h), shape--(h,w,c)
+            bytesPerLine = 3 * imgWidth
+            self.qImg = QImage(self.image.data, imgWidth, imgHeight, bytesPerLine,
+                               QImage.Format_RGB888).rgbSwapped()
 
-        self.image = cv.resize(self.image, (imgWidth, imgHeight))  # (w, h), shape--(h,w,c)
-        bytesPerLine = 3 * imgWidth
-        self.qImg = QImage(self.image.data, imgWidth, imgHeight, bytesPerLine,
-                           QImage.Format_RGB888).rgbSwapped()
+            self.showImage.setPixmap(QPixmap.fromImage(self.qImg))
+            """大的w, h、 图片x, y
+            图片的center = 大的的center
+            (w/2, h/2)
+            图片的左上点(w/2 - x/2, h/2 - y/2)
+            """
+            self.showImage.setGeometry(round(width / 2 - imgWidth / 2), round(height / 2 - imgHeight / 2),
+                                       imgWidth, imgHeight)  # x,y,w,h
 
-        self.showImage.setPixmap(QPixmap.fromImage(self.qImg))
-        """大的w, h、 图片x, y
-        图片的center = 大的的center
-        (w/2, h/2)
-        图片的左上点(w/2 - x/2, h/2 - y/2)
-        """
-        self.showImage.setGeometry(round(width / 2 - imgWidth / 2), round(height / 2 - imgHeight / 2),
-                                   imgWidth, imgHeight)  # x,y,w,h
-
-        self.imageLists.setCurrentItem(item)
+            self.imageLists.setCurrentItem(item)
+        except :
+            print("加载图片出错, 可能是含有中文之类")
 
 
 def link_image():
